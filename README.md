@@ -1,8 +1,85 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Time Tracker
+
+This is a comprehensive time tracking application built with Next.js 15, React 19, TypeScript, and AWS Cognito for authentication.
+
+## AWS Cognito Setup
+
+To enable user authentication, you'll need to configure AWS Cognito. Follow these steps:
+
+### Step 1: Create an AWS Account
+- Sign up for an AWS account at https://aws.amazon.com if you don't have one
+- Access the AWS Console and search for "Cognito"
+
+### Step 2: Create a User Pool
+1. Open AWS Cognito in the AWS Console
+2. Click "Create user pool"
+3. Configure sign-in experience:
+   - Choose "Email" as the sign-in option
+   - Keep "Username" if you prefer username-based login
+4. Configure security requirements:
+   - Set password policy (minimum 8 characters recommended)
+   - Enable MFA if desired (optional for development)
+
+### Step 3: Configure Sign-up Experience
+1. Choose required attributes: Email (required)
+2. Configure message delivery:
+   - Choose "Send email with Cognito" for development
+   - For production, configure SES for better email delivery
+
+### Step 4: Integrate Your App
+1. Give your user pool a name (e.g., "time-tracker-users")
+2. Create an app client:
+   - App client name: "time-tracker-web"
+   - Check "Generate a client secret" (optional, not needed for web apps)
+   - Enable "Authentication flows": ALLOW_USER_SRP_AUTH
+
+### Step 5: Get Your Configuration Values
+After creating the user pool, note down:
+- **User Pool ID**: Found in General Settings
+- **App Client ID**: Found in App Clients section
+
+### Step 6: Configure Environment Variables
+1. Copy the example environment file:
+   ```bash
+   cp .env.local.example .env.local
+   ```
+
+2. Edit `.env.local` and replace the placeholder values with your actual AWS Cognito configuration:
+
+```env
+NEXT_PUBLIC_COGNITO_USER_POOL_ID=your-user-pool-id-here
+NEXT_PUBLIC_COGNITO_USER_POOL_CLIENT_ID=your-app-client-id-here
+```
+
+### Step 7: Configure Hosted UI (Optional)
+1. In your user pool, go to "App client settings"
+2. Enable "Hosted UI"
+3. Set callback and sign out URLs:
+   - Callback URL: http://localhost:3000 (for development)
+   - Sign out URL: http://localhost:3000
+
+### Step 8: Test Your Setup
+1. Start your development server
+2. Try creating a new account - you should receive a confirmation email
+3. Confirm your account using the code sent to your email
+4. Login with your credentials
+
+### Step 9: Production Considerations
+For production deployment:
+- Update callback URLs to your production domain
+- Configure custom domain for Cognito (optional)
+- Set up SES for email delivery
+- Enable CloudWatch logging for debugging
+
+### Step 10: Additional Security (Recommended)
+1. Enable advanced security features in Cognito
+2. Configure user pool policies
+3. Set up CloudTrail for audit logging
+4. Consider implementing refresh token rotation
 
 ## Getting Started
 
-First, run the development server:
+First, set up AWS Cognito following the steps above, then run the development server:
 
 ```bash
 npm run dev
