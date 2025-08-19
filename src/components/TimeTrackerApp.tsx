@@ -142,15 +142,14 @@ export const TimeTrackerApp: React.FC = () => {
   }, [teams]);
 
   useEffect(() => {
-    if (userName === null) {
-      const name = prompt("Por favor, ingresa tu nombre:", "Usuario");
-      const finalName = name?.trim() || "Usuario";
+    if (userName === null && user?.email) {
+      const finalName = user.email;
       setUserName(finalName);
       localStorage.setItem("timesheet_userName", finalName);
-    } else {
+    } else if (userName) {
       localStorage.setItem("timesheet_userName", userName);
     }
-  }, [userName]);
+  }, [userName, user?.email]);
 
   // --- Navigation Handlers ---
   const goToPreviousMonth = () =>
@@ -346,7 +345,7 @@ export const TimeTrackerApp: React.FC = () => {
   return (
     <div className="h-screen flex flex-col font-sans bg-gray-100">
       <Header
-        userName={user?.username || userName}
+        userName={user?.email || userName}
         isEditingName={isEditingName}
         editingNameValue={editingNameValue}
         currentView={currentView}

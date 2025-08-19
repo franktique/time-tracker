@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { Hub } from 'aws-amplify/utils';
+import { fetchAuthSession } from 'aws-amplify/auth';
 import { cognitoAuth, validateEmailDomain, type SignUpResult } from '@/lib/cognito';
 import { syncCognitoUserClient, type LocalUser } from '@/lib/client-user-sync';
 
@@ -55,14 +56,78 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  // Poll for token availability after Hub signedIn event
+  const waitForTokenAvailability = async (): Promise<boolean> => {
+    const maxAttempts = 8; // Try for up to 8 seconds
+    const baseDelay = 500;
+    
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        console.log(`🔍 [AUTH-CONTEXT] Token availability check ${attempt}/${maxAttempts}`);
+        const session = await fetchAuthSession();
+        const token = session.tokens?.accessToken?.toString();
+        
+        if (token) {
+          // Verify token is not expired
+          const accessToken = session.tokens?.accessToken;
+          if (accessToken && accessToken.payload.exp) {
+            const expirationTime = accessToken.payload.exp * 1000;
+            const now = Date.now();
+            const bufferTime = 60000; // 1 minute buffer
+            
+            if (expirationTime - bufferTime > now) {
+              console.log(`✅ [AUTH-CONTEXT] Valid token found on attempt ${attempt}`);
+              return true;
+            }
+          } else {
+            console.log(`✅ [AUTH-CONTEXT] Token found (no expiration check) on attempt ${attempt}`);
+            return true;
+          }
+        }
+        
+        console.log(`⏳ [AUTH-CONTEXT] No valid token yet (attempt ${attempt}), waiting...`);
+        const delay = baseDelay + (attempt * 250); // Increasing delay: 500ms, 750ms, 1000ms, etc.
+        await new Promise(resolve => setTimeout(resolve, delay));
+        
+      } catch (error) {
+        console.log(`❌ [AUTH-CONTEXT] Token check failed (attempt ${attempt}):`, {
+          errorName: error instanceof Error ? error.name : 'Unknown',
+          errorMessage: error instanceof Error ? error.message : String(error)
+        });
+        
+        if (attempt < maxAttempts) {
+          const delay = baseDelay + (attempt * 250);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+    
+    console.log('❌ [AUTH-CONTEXT] Failed to get valid token after all attempts');
+    return false;
+  };
+
   const handleSignedIn = async () => {
     try {
+      console.log('🎯 [AUTH-CONTEXT] Processing signedIn event, waiting for token availability...');
+      
+      // Wait for tokens to actually be available
+      const tokensAvailable = await waitForTokenAvailability();
+      
+      if (!tokensAvailable) {
+        console.error('❌ [AUTH-CONTEXT] Tokens not available after sign-in, cannot proceed');
+        setUser(null);
+        setIsLoading(false);
+        return;
+      }
+      
+      console.log('🔄 [AUTH-CONTEXT] Tokens confirmed available, getting user info...');
       const cognitoUser = await cognitoAuth.getCurrentUser();
       if (cognitoUser) {
+        console.log('✅ [AUTH-CONTEXT] User info retrieved, syncing...');
         await handleUserSync(cognitoUser);
       }
     } catch (error) {
-      console.error('Failed to handle signed in event:', error);
+      console.error('❌ [AUTH-CONTEXT] Failed to handle signed in event:', error);
       setUser(null);
     } finally {
       setIsLoading(false);
@@ -75,8 +140,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       
       setUser({
         id: cognitoUser.userId,
-        username: cognitoUser.username,
-        email: cognitoUser.email,
+        username: syncResult.user.username, // Use local user's username (which is the email)
+        email: cognitoUser.email || syncResult.user.email,
         localUser: syncResult.user,
       });
       

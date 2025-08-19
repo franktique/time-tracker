@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import { apiClient, ApiError } from "@/lib/api-client";
-import { cognitoAuth } from "@/lib/cognito";
+import { fetchAuthSession } from 'aws-amplify/auth';
 import { TASK_TYPES, TASK_GROUPS } from "@/lib/constants";
 import type { Task } from "@/types";
 import type { TaskType, TaskGroup } from "@/lib/constants";
@@ -52,44 +52,121 @@ export const useApiTaskManagement = () => {
     }
   }, []);
 
+  // Test if we can actually retrieve a valid access token (same as API client)
+  const testTokenRetrieval = useCallback(async (): Promise<boolean> => {
+    try {
+      console.log('🧪 [TASK-MANAGER] Testing direct token retrieval...');
+      const session = await fetchAuthSession();
+      const token = session.tokens?.accessToken?.toString();
+      
+      if (!token) {
+        console.log('🧪 [TASK-MANAGER] No access token found in direct test');
+        return false;
+      }
+
+      // Verify the token is not expired (same logic as API client)
+      const accessToken = session.tokens?.accessToken;
+      if (accessToken && accessToken.payload.exp) {
+        const expirationTime = accessToken.payload.exp * 1000; // Convert to milliseconds
+        const now = Date.now();
+        const bufferTime = 60000; // 1 minute buffer
+        const timeUntilExpiry = expirationTime - now;
+        
+        if (expirationTime - bufferTime < now) {
+          console.log('🧪 [TASK-MANAGER] Token found but expired in direct test');
+          return false;
+        }
+        
+        console.log(`🧪 [TASK-MANAGER] Valid token found, expires in ${Math.floor(timeUntilExpiry / 1000)}s`);
+      }
+      
+      console.log('🧪 [TASK-MANAGER] Direct token retrieval successful');
+      return true;
+    } catch (error) {
+      console.log('🧪 [TASK-MANAGER] Direct token retrieval failed:', {
+        errorName: error instanceof Error ? error.name : 'Unknown',
+        errorMessage: error instanceof Error ? error.message : String(error)
+      });
+      return false;
+    }
+  }, []);
+
   // Initialize tasks when authentication is ready
   useEffect(() => {
     initializeTasksWhenReady();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const initializeTasksWhenReady = async () => {
+  const initializeTasksWhenReady = useCallback(async () => {
+    const startTime = Date.now();
+    console.log('🚀 [TASK-MANAGER] Starting authentication check...', new Date().toISOString());
+    
     try {
-      // Wait for authentication state to be established
+      // Wait for authentication state to be established with token availability
       let attempts = 0;
-      const maxAttempts = 10; // Maximum wait time: 10 seconds
+      const maxAttempts = 15; // Increased from 10 to 15 seconds for better reliability
       
       while (attempts < maxAttempts) {
+        const attemptStart = Date.now();
+        console.log(`🔍 [TASK-MANAGER] Auth check attempt ${attempts + 1}/${maxAttempts} at ${new Date().toISOString()}`);
+        
+        // Provide user feedback for longer waits
+        if (attempts === 3) {
+          setError('Establishing connection... This may take a moment.');
+        } else if (attempts === 7) {
+          setError('Still connecting... Please wait.');
+        } else if (attempts === 12) {
+          setError('Connection taking longer than expected...');
+        }
+        
         try {
-          const hasSession = await cognitoAuth.hasValidSession();
-          if (hasSession) {
-            console.log('✅ Authentication ready, loading tasks...');
+          // Test direct token retrieval (same method as API client)
+          const hasValidToken = await testTokenRetrieval();
+          const checkDuration = Date.now() - attemptStart;
+          
+          console.log(`🔍 [TASK-MANAGER] Token test (attempt ${attempts + 1}):`, {
+            hasValidToken,
+            checkDuration: `${checkDuration}ms`
+          });
+          
+          if (hasValidToken) {
+            const totalWaitTime = Date.now() - startTime;
+            console.log(`✅ [TASK-MANAGER] Valid token confirmed after ${totalWaitTime}ms, loading tasks...`);
+            setError(null); // Clear any pending error messages
             await loadTasks();
             return;
           }
-        } catch {
-          console.log('🔄 Checking auth state...');
+        } catch (error) {
+          const attemptDuration = Date.now() - attemptStart;
+          console.log(`❌ [TASK-MANAGER] Auth check attempt ${attempts + 1} failed after ${attemptDuration}ms:`, {
+            errorName: error instanceof Error ? error.name : 'Unknown',
+            errorMessage: error instanceof Error ? error.message : String(error)
+          });
         }
         
         attempts++;
+        const delayStart = Date.now();
         await new Promise(resolve => setTimeout(resolve, 1000));
+        console.log(`⏳ [TASK-MANAGER] Waited 1000ms (actual: ${Date.now() - delayStart}ms) before retry`);
       }
       
-      // If we reach here, user is likely not authenticated
-      console.log('ℹ️ No authentication found, user needs to log in');
+      // If we reach here, authentication failed
+      const totalWaitTime = Date.now() - startTime;
+      console.log(`ℹ️ [TASK-MANAGER] No authentication found after ${totalWaitTime}ms and ${maxAttempts} attempts, user needs to log in`);
+      setError('Authentication required. Please sign in to continue.');
       setIsLoading(false);
       
     } catch (error) {
-      console.error('Failed to initialize tasks:', error);
-      setError('Failed to initialize application');
+      const totalTime = Date.now() - startTime;
+      console.error(`❌ [TASK-MANAGER] Failed to initialize tasks after ${totalTime}ms:`, {
+        errorName: error instanceof Error ? error.name : 'Unknown',
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined
+      });
+      setError('Unable to initialize application. Please refresh the page and try again.');
       setIsLoading(false);
     }
-  };
+  }, [testTokenRetrieval, loadTasks]);
 
   // Helper function to find task by ID in the tree
   const findTaskById = useCallback((tasks: Task[], id: string | number): Task | null => {
@@ -221,6 +298,14 @@ export const useApiTaskManagement = () => {
     [loadTasks]
   );
 
+  // Retry initialization (useful when authentication fails)
+  const retryInitialization = useCallback(() => {
+    console.log('🔄 [TASK-MANAGER] User requested retry of initialization');
+    setError(null);
+    setIsLoading(true);
+    initializeTasksWhenReady();
+  }, [initializeTasksWhenReady]);
+
   return {
     rootTask,
     isLoading,
@@ -260,5 +345,6 @@ export const useApiTaskManagement = () => {
     handleToggleOverallComplete,
     handleUpdateDailyData,
     refreshTasks: loadTasks,
+    retryInitialization, // New retry function for failed authentication
   };
 };

@@ -1,6 +1,5 @@
 import type { Task, Team, User } from '@/types';
 import { fetchAuthSession } from 'aws-amplify/auth';
-import { cognitoAuth } from './cognito';
 
 export interface ApiResponse<T = any> {
   success: boolean;
@@ -50,21 +49,96 @@ async function retry<T>(
 class ApiClient {
   private baseUrl = '/api';
 
-  // Get current access token from Cognito session
+  // Get current access token from Cognito session with retry logic and comprehensive debugging
   private async getAccessToken(): Promise<string | null> {
-    try {
-      // First check if we have a valid session
-      const hasSession = await cognitoAuth.hasValidSession();
-      if (!hasSession) {
+    const maxRetries = 3;
+    const baseDelay = 250; // Start with 250ms
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`🔍 [API-CLIENT] Token retrieval attempt ${attempt}/${maxRetries}...`);
+        const session = await fetchAuthSession();
+        
+        // Debug session object structure
+        console.log(`🔍 [API-CLIENT] Session object (attempt ${attempt}):`, {
+          hasTokens: !!session.tokens,
+          hasAccessToken: !!session.tokens?.accessToken,
+          hasIdToken: !!session.tokens?.idToken,
+          hasRefreshToken: !!session.tokens?.refreshToken,
+          sessionString: session.tokens?.accessToken?.toString()?.substring(0, 50) + '...'
+        });
+        
+        const token = session.tokens?.accessToken?.toString();
+        
+        if (!token) {
+          console.log(`❌ [API-CLIENT] No access token found (attempt ${attempt})`);
+          if (attempt < maxRetries) {
+            const delay = baseDelay * Math.pow(2, attempt - 1); // Exponential backoff: 250ms, 500ms, 1000ms
+            console.log(`⏳ [API-CLIENT] Retrying token retrieval in ${delay}ms...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            continue;
+          }
+          return null;
+        }
+
+        // Verify the token is not expired
+        const accessToken = session.tokens?.accessToken;
+        if (accessToken && accessToken.payload.exp) {
+          const expirationTime = accessToken.payload.exp * 1000; // Convert to milliseconds
+          const now = Date.now();
+          const bufferTime = 60000; // 1 minute buffer
+          const timeUntilExpiry = expirationTime - now;
+          
+          console.log(`🔍 [API-CLIENT] Token timing (attempt ${attempt}):`, {
+            expirationTime: new Date(expirationTime).toISOString(),
+            now: new Date(now).toISOString(),
+            timeUntilExpiry: `${Math.floor(timeUntilExpiry / 1000)}s`,
+            isExpired: timeUntilExpiry - bufferTime < 0
+          });
+          
+          if (expirationTime - bufferTime < now) {
+            console.log(`🔄 [API-CLIENT] Access token is expired or about to expire (attempt ${attempt})`);
+            if (attempt < maxRetries) {
+              const delay = baseDelay * Math.pow(2, attempt - 1);
+              console.log(`⏳ [API-CLIENT] Retrying token retrieval in ${delay}ms...`);
+              await new Promise(resolve => setTimeout(resolve, delay));
+              continue;
+            }
+            return null;
+          }
+        }
+        
+        console.log(`✅ [API-CLIENT] Valid access token retrieved successfully on attempt ${attempt}`);
+        return token;
+      } catch (error) {
+        console.error(`❌ [API-CLIENT] Token retrieval attempt ${attempt} failed:`, {
+          errorName: error instanceof Error ? error.name : 'Unknown',
+          errorMessage: error instanceof Error ? error.message : String(error),
+          errorStack: error instanceof Error ? error.stack?.substring(0, 200) + '...' : undefined
+        });
+        
+        // Check if this is a retryable error
+        const isRetryable = error instanceof Error && (
+          error.name === 'NetworkError' ||
+          error.name === 'TimeoutError' ||
+          error.message.includes('session') ||
+          error.message.includes('token')
+        );
+        
+        if (attempt < maxRetries && isRetryable) {
+          const delay = baseDelay * Math.pow(2, attempt - 1);
+          console.log(`⏳ [API-CLIENT] Retrying after error in ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+        
+        // If it's the last attempt or not retryable, return null
         return null;
       }
-
-      const session = await fetchAuthSession();
-      return session.tokens?.accessToken?.toString() || null;
-    } catch (error) {
-      console.error('Failed to get access token:', error);
-      return null;
     }
+    
+    console.error('❌ [API-CLIENT] All token retrieval attempts failed');
+    return null;
   }
 
   private async request<T>(
@@ -102,9 +176,9 @@ class ApiClient {
 
   // Check if user is authenticated before making requests
   private async ensureAuthenticated(): Promise<void> {
-    const hasSession = await cognitoAuth.hasValidSession();
-    if (!hasSession) {
-      throw new ApiError('User must be authenticated to perform this action', 401);
+    const token = await this.getAccessToken();
+    if (!token) {
+      throw new ApiError('Authentication required', 401);
     }
   }
 

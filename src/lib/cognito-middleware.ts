@@ -15,36 +15,54 @@ export interface CognitoAuthResult {
  */
 export async function validateCognitoToken(request: NextRequest): Promise<CognitoAuthResult> {
   try {
+    console.log('🔍 [COGNITO-MIDDLEWARE] Starting token validation');
+    
     // Try to get token from Authorization header first
     const authHeader = request.headers.get('authorization');
     let token: string | null = null;
     
+    console.log('🔍 [COGNITO-MIDDLEWARE] Auth header:', authHeader?.substring(0, 50) + '...');
+    
     if (authHeader?.startsWith('Bearer ')) {
       token = authHeader.substring(7);
+      console.log('✅ [COGNITO-MIDDLEWARE] Token extracted from Authorization header');
     } else {
+      console.log('⚠️ [COGNITO-MIDDLEWARE] No Bearer token in Authorization header, trying cookies');
       // Fallback to cookie
       const tokenCookie = request.cookies.get('auth-token');
       token = tokenCookie?.value || null;
+      if (token) {
+        console.log('✅ [COGNITO-MIDDLEWARE] Token found in cookies');
+      }
     }
     
     if (!token) {
+      console.log('❌ [COGNITO-MIDDLEWARE] No token provided');
       return { isAuthenticated: false, error: 'No token provided' };
     }
+    
+    console.log('🔍 [COGNITO-MIDDLEWARE] Token preview:', token.substring(0, 50) + '...');
     
     // For Cognito tokens, we need to validate the JWT and extract the user ID
     // Since we're in a server context, we'll decode the JWT manually
     const cognitoUserId = extractCognitoUserIdFromToken(token);
+    console.log('🔍 [COGNITO-MIDDLEWARE] Extracted Cognito user ID:', cognitoUserId);
     
     if (!cognitoUserId) {
+      console.log('❌ [COGNITO-MIDDLEWARE] Invalid token format - could not extract user ID');
       return { isAuthenticated: false, error: 'Invalid token format' };
     }
     
     // Get the corresponding local user
+    console.log('🔍 [COGNITO-MIDDLEWARE] Looking up local user for Cognito ID:', cognitoUserId);
     const localUser = await getLocalUserByCognitoId(cognitoUserId);
     
     if (!localUser) {
+      console.log('❌ [COGNITO-MIDDLEWARE] User not found in local database for Cognito ID:', cognitoUserId);
       return { isAuthenticated: false, error: 'User not found in local database' };
     }
+    
+    console.log('✅ [COGNITO-MIDDLEWARE] Local user found:', { id: localUser.id, username: localUser.username });
     
     return {
       isAuthenticated: true,
@@ -64,21 +82,36 @@ export async function validateCognitoToken(request: NextRequest): Promise<Cognit
  */
 function extractCognitoUserIdFromToken(token: string): string | null {
   try {
+    console.log('🔍 [TOKEN-EXTRACT] Extracting user ID from JWT token');
+    
     // JWT tokens have 3 parts separated by dots
     const parts = token.split('.');
+    console.log('🔍 [TOKEN-EXTRACT] JWT parts count:', parts.length);
+    
     if (parts.length !== 3) {
+      console.log('❌ [TOKEN-EXTRACT] Invalid JWT format - expected 3 parts, got', parts.length);
       return null;
     }
     
     // Decode the payload (second part)
     const payload = parts[1];
+    console.log('🔍 [TOKEN-EXTRACT] Payload part length:', payload.length);
+    
     const decodedPayload = Buffer.from(payload, 'base64url').toString('utf8');
     const claims = JSON.parse(decodedPayload);
+    console.log('🔍 [TOKEN-EXTRACT] Token claims:', {
+      sub: claims.sub,
+      iss: claims.iss,
+      token_use: claims.token_use,
+      exp: claims.exp ? new Date(claims.exp * 1000).toISOString() : 'undefined'
+    });
     
     // Cognito uses 'sub' claim for user ID
-    return claims.sub || null;
+    const userId = claims.sub || null;
+    console.log('🔍 [TOKEN-EXTRACT] Extracted user ID:', userId);
+    return userId;
   } catch (error) {
-    console.error('Error extracting user ID from token:', error);
+    console.error('❌ [TOKEN-EXTRACT] Error extracting user ID from token:', error);
     return null;
   }
 }

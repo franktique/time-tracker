@@ -1,10 +1,10 @@
 import { NextRequest } from 'next/server';
-import { withAuth } from '@/lib/middleware';
+import { withCognitoAuth } from '@/lib/middleware';
 import { createSuccessResponse, createErrorResponse, validateJsonBody, handleApiError } from '@/lib/middleware';
 import { getUserTasks, createTask } from '@/lib/db-queries/tasks';
 
 // GET /api/tasks - Get user's complete task tree
-export const GET = withAuth(async (request) => {
+export const GET = withCognitoAuth(async (request) => {
   try {
     const rootTask = await getUserTasks(request.user.id);
     return createSuccessResponse(rootTask);
@@ -14,7 +14,7 @@ export const GET = withAuth(async (request) => {
 });
 
 // POST /api/tasks - Create new task
-export const POST = withAuth(async (request) => {
+export const POST = withCognitoAuth(async (request) => {
   try {
     const body = await validateJsonBody(request);
     const { parentId, text, type, group, position = 0 } = body;
