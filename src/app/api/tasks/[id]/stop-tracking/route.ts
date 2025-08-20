@@ -1,11 +1,11 @@
 import { NextRequest } from 'next/server';
-import { withAuth } from '@/lib/middleware';
+import { withCognitoAuth } from '@/lib/middleware';
 import { createSuccessResponse, createErrorResponse, validateJsonBody, handleApiError } from '@/lib/middleware';
 import { updateTask, updateDailyData } from '@/lib/db-queries/tasks';
 import { query } from '@/lib/db';
 
 // POST /api/tasks/[id]/stop-tracking - Stop time tracking
-export const POST = withAuth(async (request, context) => {
+export const POST = withCognitoAuth(async (request, context) => {
   try {
     const taskId = context?.params?.id;
     if (!taskId) {
