@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import { apiClient, ApiError } from "@/lib/api-client";
-import { fetchAuthSession } from 'aws-amplify/auth';
+import { fetchAuthSession } from "aws-amplify/auth";
 import { TASK_TYPES, TASK_GROUPS } from "@/lib/constants";
 import type { Task } from "@/types";
 import type { TaskType, TaskGroup } from "@/lib/constants";
@@ -9,14 +9,20 @@ export const useApiTaskManagement = () => {
   const [rootTask, setRootTask] = useState<Task | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
+
   // Task editing state
-  const [editingTodoId, setEditingTodoId] = useState<string | number | null>(null);
+  const [editingTodoId, setEditingTodoId] = useState<string | number | null>(
+    null
+  );
   const [editText, setEditText] = useState("");
-  const [isAddingTaskTo, setIsAddingTaskTo] = useState<string | number | "root" | null>(null);
+  const [isAddingTaskTo, setIsAddingTaskTo] = useState<
+    string | number | "root" | null
+  >(null);
   const [newTaskInputValue, setNewTaskInputValue] = useState("");
   const [newTaskType, setNewTaskType] = useState<TaskType>(TASK_TYPES.UNIQUE);
-  const [newTaskGroup, setNewTaskGroup] = useState<TaskGroup>(TASK_GROUPS.OTHER);
+  const [newTaskGroup, setNewTaskGroup] = useState<TaskGroup>(
+    TASK_GROUPS.OTHER
+  );
 
   // Load tasks from API
   const loadTasks = useCallback(async () => {
@@ -24,13 +30,12 @@ export const useApiTaskManagement = () => {
       setIsLoading(true);
       setError(null);
       const tasks = await apiClient.getTasks();
-      
       // Ensure we have a valid task structure
-      if (tasks && typeof tasks === 'object') {
+      if (tasks && typeof tasks === "object") {
         setRootTask(tasks);
       } else {
         // Create empty root task if API returns null/undefined
-        setRootTask({
+        const defaultTask = {
           id: "root",
           text: "Projectos",
           subtasks: [],
@@ -42,11 +47,22 @@ export const useApiTaskManagement = () => {
           isTracking: false,
           startTime: null,
           trackingDate: null,
-        });
+        };
+        setRootTask(defaultTask);
       }
     } catch (error) {
-      console.error('Failed to load tasks:', error);
-      setError(error instanceof ApiError ? error.message : 'Failed to load tasks');
+      console.error("❌ [TASK-MANAGER] Failed to load tasks:", {
+        errorName: error instanceof Error ? error.name : "Unknown",
+        errorMessage: error instanceof Error ? error.message : String(error),
+        isApiError: error instanceof ApiError,
+        errorStack:
+          error instanceof Error
+            ? error.stack?.substring(0, 300) + "..."
+            : undefined,
+      });
+      setError(
+        error instanceof ApiError ? error.message : "Failed to load tasks"
+      );
     } finally {
       setIsLoading(false);
     }
@@ -55,12 +71,10 @@ export const useApiTaskManagement = () => {
   // Test if we can actually retrieve a valid access token (same as API client)
   const testTokenRetrieval = useCallback(async (): Promise<boolean> => {
     try {
-      console.log('🧪 [TASK-MANAGER] Testing direct token retrieval...');
       const session = await fetchAuthSession();
       const token = session.tokens?.accessToken?.toString();
-      
+
       if (!token) {
-        console.log('🧪 [TASK-MANAGER] No access token found in direct test');
         return false;
       }
 
@@ -71,21 +85,16 @@ export const useApiTaskManagement = () => {
         const now = Date.now();
         const bufferTime = 60000; // 1 minute buffer
         const timeUntilExpiry = expirationTime - now;
-        
+
         if (expirationTime - bufferTime < now) {
-          console.log('🧪 [TASK-MANAGER] Token found but expired in direct test');
           return false;
         }
-        
-        console.log(`🧪 [TASK-MANAGER] Valid token found, expires in ${Math.floor(timeUntilExpiry / 1000)}s`);
       }
-      
-      console.log('🧪 [TASK-MANAGER] Direct token retrieval successful');
       return true;
     } catch (error) {
-      console.log('🧪 [TASK-MANAGER] Direct token retrieval failed:', {
-        errorName: error instanceof Error ? error.name : 'Unknown',
-        errorMessage: error instanceof Error ? error.message : String(error)
+      console.error("🧪 [TASK-MANAGER] Direct token retrieval failed:", {
+        errorName: error instanceof Error ? error.name : "Unknown",
+        errorMessage: error instanceof Error ? error.message : String(error),
       });
       return false;
     }
@@ -99,84 +108,86 @@ export const useApiTaskManagement = () => {
 
   const initializeTasksWhenReady = useCallback(async () => {
     const startTime = Date.now();
-    console.log('🚀 [TASK-MANAGER] Starting authentication check...', new Date().toISOString());
-    
+
     try {
       // Wait for authentication state to be established with token availability
       let attempts = 0;
       const maxAttempts = 15; // Increased from 10 to 15 seconds for better reliability
-      
+
       while (attempts < maxAttempts) {
         const attemptStart = Date.now();
-        console.log(`🔍 [TASK-MANAGER] Auth check attempt ${attempts + 1}/${maxAttempts} at ${new Date().toISOString()}`);
-        
+
         // Provide user feedback for longer waits
         if (attempts === 3) {
-          setError('Establishing connection... This may take a moment.');
+          setError("Establishing connection... This may take a moment.");
         } else if (attempts === 7) {
-          setError('Still connecting... Please wait.');
+          setError("Still connecting... Please wait.");
         } else if (attempts === 12) {
-          setError('Connection taking longer than expected...');
+          setError("Connection taking longer than expected...");
         }
-        
+
         try {
           // Test direct token retrieval (same method as API client)
           const hasValidToken = await testTokenRetrieval();
           const checkDuration = Date.now() - attemptStart;
-          
-          console.log(`🔍 [TASK-MANAGER] Token test (attempt ${attempts + 1}):`, {
-            hasValidToken,
-            checkDuration: `${checkDuration}ms`
-          });
-          
           if (hasValidToken) {
             const totalWaitTime = Date.now() - startTime;
-            console.log(`✅ [TASK-MANAGER] Valid token confirmed after ${totalWaitTime}ms, loading tasks...`);
             setError(null); // Clear any pending error messages
             await loadTasks();
             return;
           }
         } catch (error) {
           const attemptDuration = Date.now() - attemptStart;
-          console.log(`❌ [TASK-MANAGER] Auth check attempt ${attempts + 1} failed after ${attemptDuration}ms:`, {
-            errorName: error instanceof Error ? error.name : 'Unknown',
-            errorMessage: error instanceof Error ? error.message : String(error)
-          });
+          console.error(
+            `❌ [TASK-MANAGER] Auth check attempt ${
+              attempts + 1
+            } failed after ${attemptDuration}ms:`,
+            {
+              errorName: error instanceof Error ? error.name : "Unknown",
+              errorMessage:
+                error instanceof Error ? error.message : String(error),
+            }
+          );
         }
-        
+
         attempts++;
         const delayStart = Date.now();
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        console.log(`⏳ [TASK-MANAGER] Waited 1000ms (actual: ${Date.now() - delayStart}ms) before retry`);
+        await new Promise((resolve) => setTimeout(resolve, 1000));
       }
-      
+
       // If we reach here, authentication failed
       const totalWaitTime = Date.now() - startTime;
-      console.log(`ℹ️ [TASK-MANAGER] No authentication found after ${totalWaitTime}ms and ${maxAttempts} attempts, user needs to log in`);
-      setError('Authentication required. Please sign in to continue.');
+      setError("Authentication required. Please sign in to continue.");
       setIsLoading(false);
-      
     } catch (error) {
       const totalTime = Date.now() - startTime;
-      console.error(`❌ [TASK-MANAGER] Failed to initialize tasks after ${totalTime}ms:`, {
-        errorName: error instanceof Error ? error.name : 'Unknown',
-        errorMessage: error instanceof Error ? error.message : String(error),
-        errorStack: error instanceof Error ? error.stack : undefined
-      });
-      setError('Unable to initialize application. Please refresh the page and try again.');
+      console.error(
+        `❌ [TASK-MANAGER] Failed to initialize tasks after ${totalTime}ms:`,
+        {
+          errorName: error instanceof Error ? error.name : "Unknown",
+          errorMessage: error instanceof Error ? error.message : String(error),
+          errorStack: error instanceof Error ? error.stack : undefined,
+        }
+      );
+      setError(
+        "Unable to initialize application. Please refresh the page and try again."
+      );
       setIsLoading(false);
     }
   }, [testTokenRetrieval, loadTasks]);
 
   // Helper function to find task by ID in the tree
-  const findTaskById = useCallback((tasks: Task[], id: string | number): Task | null => {
-    for (const task of tasks) {
-      if (task.id === id) return task;
-      const found = findTaskById(task.subtasks, id);
-      if (found) return found;
-    }
-    return null;
-  }, []);
+  const findTaskById = useCallback(
+    (tasks: Task[], id: string | number): Task | null => {
+      for (const task of tasks) {
+        if (task.id === id) return task;
+        const found = findTaskById(task.subtasks, id);
+        if (found) return found;
+      }
+      return null;
+    },
+    []
+  );
 
   // Add task
   const handleRequestAddTask = useCallback(
@@ -188,7 +199,7 @@ export const useApiTaskManagement = () => {
       } else {
         setNewTaskGroup(TASK_GROUPS.OTHER);
       }
-      
+
       setIsAddingTaskTo(parentId);
       setNewTaskInputValue("");
       setNewTaskType(TASK_TYPES.UNIQUE);
@@ -201,7 +212,19 @@ export const useApiTaskManagement = () => {
 
     try {
       if (isAddingTaskTo === "root") {
-        await apiClient.createTask(null, newTaskInputValue.trim(), newTaskType, newTaskGroup);
+        // Pass the actual root task ID, not null
+        const rootTaskId = rootTask?.id;
+        if (!rootTaskId) {
+          console.error("No root task available for creating subtask");
+          setError("Unable to create task: No root task found");
+          return;
+        }
+        await apiClient.createTask(
+          String(rootTaskId),
+          newTaskInputValue.trim(),
+          newTaskType,
+          newTaskGroup
+        );
       } else {
         await apiClient.createSubtask(
           isAddingTaskTo as string,
@@ -210,14 +233,16 @@ export const useApiTaskManagement = () => {
           newTaskGroup
         );
       }
-      
+
       // Reload tasks after adding
       await loadTasks();
       setIsAddingTaskTo(null);
       setNewTaskInputValue("");
     } catch (error) {
-      console.error('Failed to add task:', error);
-      setError(error instanceof ApiError ? error.message : 'Failed to add task');
+      console.error("Failed to add task:", error);
+      setError(
+        error instanceof ApiError ? error.message : "Failed to add task"
+      );
     }
   }, [newTaskInputValue, newTaskType, newTaskGroup, isAddingTaskTo, loadTasks]);
 
@@ -239,8 +264,10 @@ export const useApiTaskManagement = () => {
         setEditingTodoId(null);
         setEditText("");
       } catch (error) {
-        console.error('Failed to update task:', error);
-        setError(error instanceof ApiError ? error.message : 'Failed to update task');
+        console.error("Failed to update task:", error);
+        setError(
+          error instanceof ApiError ? error.message : "Failed to update task"
+        );
       }
     },
     [editText, loadTasks]
@@ -253,8 +280,10 @@ export const useApiTaskManagement = () => {
         await apiClient.deleteTask(id as string);
         await loadTasks();
       } catch (error) {
-        console.error('Failed to delete task:', error);
-        setError(error instanceof ApiError ? error.message : 'Failed to delete task');
+        console.error("Failed to delete task:", error);
+        setError(
+          error instanceof ApiError ? error.message : "Failed to delete task"
+        );
       }
     },
     [loadTasks]
@@ -264,16 +293,20 @@ export const useApiTaskManagement = () => {
   const handleToggleOverallComplete = useCallback(
     async (id: string | number, shouldBeComplete: boolean) => {
       try {
-        await apiClient.updateTask(id as string, { 
+        await apiClient.updateTask(id as string, {
           completed: shouldBeComplete,
           is_tracking: false,
           start_time: null,
-          tracking_date: null
+          tracking_date: null,
         });
         await loadTasks();
       } catch (error) {
-        console.error('Failed to toggle task completion:', error);
-        setError(error instanceof ApiError ? error.message : 'Failed to toggle task completion');
+        console.error("Failed to toggle task completion:", error);
+        setError(
+          error instanceof ApiError
+            ? error.message
+            : "Failed to toggle task completion"
+        );
       }
     },
     [loadTasks]
@@ -281,7 +314,11 @@ export const useApiTaskManagement = () => {
 
   // Update daily data
   const handleUpdateDailyData = useCallback(
-    async (taskId: string | number, dateStr: string, dataUpdate: Record<string, unknown>) => {
+    async (
+      taskId: string | number,
+      dateStr: string,
+      dataUpdate: Record<string, unknown>
+    ) => {
       try {
         await apiClient.updateDailyData(
           taskId as string,
@@ -291,8 +328,12 @@ export const useApiTaskManagement = () => {
         );
         await loadTasks();
       } catch (error) {
-        console.error('Failed to update daily data:', error);
-        setError(error instanceof ApiError ? error.message : 'Failed to update daily data');
+        console.error("Failed to update daily data:", error);
+        setError(
+          error instanceof ApiError
+            ? error.message
+            : "Failed to update daily data"
+        );
       }
     },
     [loadTasks]
@@ -300,7 +341,7 @@ export const useApiTaskManagement = () => {
 
   // Retry initialization (useful when authentication fails)
   const retryInitialization = useCallback(() => {
-    console.log('🔄 [TASK-MANAGER] User requested retry of initialization');
+    console.info("🔄 [TASK-MANAGER] User requested retry of initialization");
     setError(null);
     setIsLoading(true);
     initializeTasksWhenReady();
@@ -337,10 +378,14 @@ export const useApiTaskManagement = () => {
         if (editingTodoId === id) handleEditSave(id);
       }, 150);
     },
-    handleEditChange: (e: React.ChangeEvent<HTMLInputElement>) => setEditText(e.target.value),
-    handleNewTaskValueChange: (e: React.ChangeEvent<HTMLInputElement>) => setNewTaskInputValue(e.target.value),
-    handleNewTaskTypeChange: (e: React.ChangeEvent<HTMLSelectElement>) => setNewTaskType(e.target.value as TaskType),
-    handleNewTaskGroupChange: (e: React.ChangeEvent<HTMLSelectElement>) => setNewTaskGroup(e.target.value as TaskGroup),
+    handleEditChange: (e: React.ChangeEvent<HTMLInputElement>) =>
+      setEditText(e.target.value),
+    handleNewTaskValueChange: (e: React.ChangeEvent<HTMLInputElement>) =>
+      setNewTaskInputValue(e.target.value),
+    handleNewTaskTypeChange: (e: React.ChangeEvent<HTMLSelectElement>) =>
+      setNewTaskType(e.target.value as TaskType),
+    handleNewTaskGroupChange: (e: React.ChangeEvent<HTMLSelectElement>) =>
+      setNewTaskGroup(e.target.value as TaskGroup),
     handleDelete,
     handleToggleOverallComplete,
     handleUpdateDailyData,

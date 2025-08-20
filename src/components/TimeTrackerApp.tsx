@@ -20,7 +20,7 @@ export const TimeTrackerApp: React.FC = () => {
   const { signOut, user } = useAuth();
 
   // --- State ---
-  
+
   const [teams, setTeams] = useState<Team[]>(() => {
     if (typeof window !== "undefined") {
       try {
@@ -33,13 +33,21 @@ export const TimeTrackerApp: React.FC = () => {
     }
     return [];
   });
-  
+
   const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [expandedIds, setExpandedIds] = useState<Set<string | number>>(new Set(["root"]));
+  const [expandedIds, setExpandedIds] = useState<Set<string | number>>(
+    new Set(["root"])
+  );
   const [hideCompleted, setHideCompleted] = useState(false);
-  const [yearViewModalTaskId, setYearViewModalTaskId] = useState<string | number | null>(null);
-  const [yearViewModalYear, setYearViewModalYear] = useState(new Date().getFullYear());
-  const [hoveredTaskId, setHoveredTaskId] = useState<string | number | null>(null);
+  const [yearViewModalTaskId, setYearViewModalTaskId] = useState<
+    string | number | null
+  >(null);
+  const [yearViewModalYear, setYearViewModalYear] = useState(
+    new Date().getFullYear()
+  );
+  const [hoveredTaskId, setHoveredTaskId] = useState<string | number | null>(
+    null
+  );
   const [userName, setUserName] = useState<string | null>(() => {
     if (typeof window !== "undefined") {
       return localStorage.getItem("timesheet_userName") || null;
@@ -65,41 +73,102 @@ export const TimeTrackerApp: React.FC = () => {
 
   // --- Hooks ---
   const taskManagement = useApiTaskManagement();
-  const { rootTask, isLoading: tasksLoading, error: tasksError } = taskManagement;
-  const timeTracker = useTimeTracker(rootTask || { 
-    id: "root", 
-    text: "Projectos", 
-    subtasks: [], 
-    type: "root" as const,
-    completed: false,
-    group: TASK_GROUPS.OTHER,
-    dailyData: {},
-    people: [],
-    isTracking: false,
-    startTime: null,
-    trackingDate: null,
-  }, () => {});
+  const {
+    rootTask,
+    isLoading: tasksLoading,
+    error: tasksError,
+  } = taskManagement;
+  const timeTracker = useTimeTracker(
+    rootTask || {
+      id: "root",
+      text: "Projectos",
+      subtasks: [],
+      type: "root" as const,
+      completed: false,
+      group: TASK_GROUPS.OTHER,
+      dailyData: {},
+      people: [],
+      isTracking: false,
+      startTime: null,
+      trackingDate: null,
+    },
+    () => {}
+  );
   const teamManagement = useTeamManagement(teams, setTeams);
 
   // Get destructured values
   const { activeTracker } = timeTracker;
-  const { 
-    editingTodoId, 
-    editText, 
+  const {
+    editingTodoId,
+    editText,
     isAddingTaskTo,
     newTaskInputValue,
     newTaskType,
-    newTaskGroup 
+    newTaskGroup,
   } = taskManagement;
 
   const visibleTasks = useMemo(() => {
-    if (!rootTask) return [];
+    const isDev = process.env.NODE_ENV === "development";
+
+    if (isDev) {
+      console.debug("🔍 [UI-PIPELINE] Computing visibleTasks...", {
+        hasRootTask: !!rootTask,
+        rootTaskId: rootTask?.id,
+        rootSubtaskCount: rootTask?.subtasks?.length || 0,
+        currentView,
+        hideCompleted,
+      });
+    }
+
+    if (!rootTask) {
+      if (isDev) {
+        console.warn(
+          "⚠️ [UI-PIPELINE] No rootTask available, returning empty array"
+        );
+      }
+      return [];
+    }
+
     const sT = sortTaskTree(rootTask.subtasks || []);
+    if (isDev) {
+      console.debug("📊 [UI-PIPELINE] After sortTaskTree:", {
+        sortedTaskCount: sT.length,
+        taskIds: sT.map((t) => t.id),
+        taskTypes: sT.map((t) => t.type),
+        tasksWithDailyData: sT.filter(
+          (t) => Object.keys(t.dailyData).length > 0
+        ).length,
+      });
+    }
+
     let tasksToShow = sT;
     if (currentView === VIEWS.SEGUIMIENTO) {
       tasksToShow = sT.filter((task) => task.group === TASK_GROUPS.PROJECT);
+      if (isDev) {
+        console.debug("📊 [UI-PIPELINE] Filtered for SEGUIMIENTO view:", {
+          originalCount: sT.length,
+          filteredCount: tasksToShow.length,
+          projectTasks: tasksToShow.map((t) => ({ id: t.id, text: t.text })),
+        });
+      }
     }
-    return filterTodos(tasksToShow, hideCompleted);
+
+    const finalTasks = filterTodos(tasksToShow, hideCompleted);
+    if (isDev) {
+      console.debug("📊 [UI-PIPELINE] Final visible tasks after filterTodos:", {
+        finalCount: finalTasks.length,
+        hidingCompleted: hideCompleted,
+        taskDetails: finalTasks.map((t) => ({
+          id: t.id,
+          text: t.text,
+          completed: t.completed,
+          dailyDataKeys: Object.keys(t.dailyData),
+          hasAnyDailyData: Object.keys(t.dailyData).length > 0,
+        })),
+      });
+    }
+
+    return finalTasks;
   }, [rootTask, hideCompleted, currentView]);
 
   const parentTaskForModal = useMemo(() => {
@@ -156,17 +225,17 @@ export const TimeTrackerApp: React.FC = () => {
     setCurrentMonth(
       (prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1)
     );
-  
+
   const goToNextMonth = () =>
     setCurrentMonth(
       (prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1)
     );
-    
+
   const goToToday = () => {
     setCurrentMonth(new Date());
   };
 
-  const handleToggleHideCompleted = (e: React.ChangeEvent<HTMLInputElement>) => 
+  const handleToggleHideCompleted = (e: React.ChangeEvent<HTMLInputElement>) =>
     setHideCompleted(e.target.checked);
 
   // --- Year View Handlers ---
@@ -188,7 +257,7 @@ export const TimeTrackerApp: React.FC = () => {
     try {
       await signOut();
     } catch (error) {
-      console.error('Logout error:', error);
+      console.error("Logout error:", error);
     }
   };
 
@@ -292,15 +361,15 @@ export const TimeTrackerApp: React.FC = () => {
       onDeletePerson: teamManagement.handleDeletePerson,
     }),
     [
-      teamManagement.handleAddTeam, 
-      teamManagement.handleAddPerson, 
-      teamManagement.handleDeleteTeam, 
-      teamManagement.handleDeletePerson
+      teamManagement.handleAddTeam,
+      teamManagement.handleAddPerson,
+      teamManagement.handleDeleteTeam,
+      teamManagement.handleDeletePerson,
     ]
   );
 
   // --- Render ---
-  
+
   // Show loading state
   if (tasksLoading) {
     return (
@@ -319,7 +388,7 @@ export const TimeTrackerApp: React.FC = () => {
       <div className="h-screen flex items-center justify-center bg-gray-100">
         <div className="text-center">
           <p className="text-red-600 mb-4">Error: {tasksError}</p>
-          <button 
+          <button
             onClick={() => taskManagement.refreshTasks()}
             className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
           >

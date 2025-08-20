@@ -1,10 +1,10 @@
 import { NextRequest } from 'next/server';
-import { withAuth } from '@/lib/middleware';
+import { withCognitoAuth } from '@/lib/middleware';
 import { createSuccessResponse, createErrorResponse, validateJsonBody, handleApiError } from '@/lib/middleware';
 import { createTask } from '@/lib/db-queries/tasks';
 
 // POST /api/tasks/[id]/subtasks - Add subtask to parent
-export const POST = withAuth(async (request, context) => {
+export const POST = withCognitoAuth(async (request, context) => {
   try {
     const parentId = context?.params?.id;
     if (!parentId) {

@@ -2,10 +2,15 @@ import { useState, useEffect, useCallback } from "react";
 import { updateTodoById } from "@/lib/task-utils";
 import type { Task, ActiveTracker } from "@/types";
 
-export const useTimeTracker = (rootTask: Task, setRootTask: (task: Task | ((prev: Task) => Task)) => void) => {
-  const [activeTracker, setActiveTracker] = useState<ActiveTracker | null>(null);
+export const useTimeTracker = (
+  rootTask: Task,
+  setRootTask: (task: Task | ((prev: Task) => Task)) => void
+) => {
+  const [activeTracker, setActiveTracker] = useState<ActiveTracker | null>(
+    null
+  );
   const [elapsedTime, setElapsedTime] = useState(0);
-  
+
   useEffect(() => {
     let i: NodeJS.Timeout | null = null;
     if (activeTracker) {
@@ -20,30 +25,37 @@ export const useTimeTracker = (rootTask: Task, setRootTask: (task: Task | ((prev
       if (i) clearInterval(i);
     };
   }, [activeTracker]);
-  
+
   const handleStartTracking = useCallback(
     (taskId: string | number, dateStr: string) => {
       if (activeTracker) {
-        console.log("Stopping current tracker...");
+        console.info("Stopping current tracker...");
         // Inline stop tracking to avoid circular dependency
         const n = Date.now();
         const sT = activeTracker.startTime;
         const dS = (n - sT) / 1000;
         setRootTask((prevTask) => ({
           ...prevTask,
-          subtasks: updateTodoById(prevTask.subtasks, activeTracker.taskId, (t) => {
-            const eDS = t.dailyData?.[activeTracker.date]?.value || 0;
-            return {
-              ...t,
-              isTracking: false,
-              startTime: null,
-              trackingDate: null,
-              dailyData: {
-                ...t.dailyData,
-                [activeTracker.date]: { ...(t.dailyData?.[activeTracker.date] || {}), value: eDS + dS },
-              },
-            };
-          }),
+          subtasks: updateTodoById(
+            prevTask.subtasks,
+            activeTracker.taskId,
+            (t) => {
+              const eDS = t.dailyData?.[activeTracker.date]?.value || 0;
+              return {
+                ...t,
+                isTracking: false,
+                startTime: null,
+                trackingDate: null,
+                dailyData: {
+                  ...t.dailyData,
+                  [activeTracker.date]: {
+                    ...(t.dailyData?.[activeTracker.date] || {}),
+                    value: eDS + dS,
+                  },
+                },
+              };
+            }
+          ),
         }));
       }
       const n = Date.now();
@@ -61,7 +73,7 @@ export const useTimeTracker = (rootTask: Task, setRootTask: (task: Task | ((prev
     },
     [activeTracker, setRootTask]
   );
-  
+
   const handleStopTracking = useCallback(
     (taskId: string | number, dateStr: string) => {
       if (
@@ -95,7 +107,7 @@ export const useTimeTracker = (rootTask: Task, setRootTask: (task: Task | ((prev
     },
     [activeTracker, setRootTask]
   );
-  
+
   return {
     activeTracker,
     elapsedTime,

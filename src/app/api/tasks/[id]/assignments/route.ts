@@ -1,10 +1,10 @@
 import { NextRequest } from 'next/server';
-import { withAuth } from '@/lib/middleware';
+import { withCognitoAuth } from '@/lib/middleware';
 import { createSuccessResponse, createErrorResponse, validateJsonBody, handleApiError } from '@/lib/middleware';
 import { updateTaskAssignments } from '@/lib/db-queries/teams';
 
 // PUT /api/tasks/[id]/assignments - Update task-person assignments
-export const PUT = withAuth(async (request, context) => {
+export const PUT = withCognitoAuth(async (request, context) => {
   try {
     const taskId = context?.params?.id;
     if (!taskId) {

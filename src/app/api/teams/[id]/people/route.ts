@@ -1,10 +1,10 @@
 import { NextRequest } from 'next/server';
-import { withAuth } from '@/lib/middleware';
+import { withCognitoAuth } from '@/lib/middleware';
 import { createSuccessResponse, createErrorResponse, validateJsonBody, handleApiError } from '@/lib/middleware';
 import { createPerson } from '@/lib/db-queries/teams';
 
 // POST /api/teams/[id]/people - Add person to team
-export const POST = withAuth(async (request, context) => {
+export const POST = withCognitoAuth(async (request, context) => {
   try {
     const teamId = context?.params?.id;
     if (!teamId) {
